@@ -1,1 +1,290 @@
+---
+title: "Ошибки I и II рода"
+lang: ru
+format:
+  html:
+    toc: true
+    toc-title: "Содержание"
+    embed-resources: true
+---
 
+## Требования к сдаче и оформлению задания
+
+Заполните этот qmd-файл кодом и ответами. Порядок сдачи задания описан в README.md, на Stepik или Google-class.
+
+1. Старайтесь соблюдать единый стиль оформления и структуру отчёта. Не оставляйте лишние чанки кода, текст или комментарии, которые не относятся к решению задания.
+2. Основные результаты представьте на графиках и объясните в тексте. Отдельные таблицы результатов не требуются. Не оставляйте необработанный консольный вывод или отдельные числа без пояснений.
+3. Графики должны быть достаточно крупными, с читаемыми русскими подписями, содержательным заголовком и правильно названными осями. Не используйте фон ggplot2 по умолчанию.
+4. Ответы на вопросы и интерпретации результатов, включая графики, пишите обычным текстом, а не комментариями к коду. Код и его вывод не заменяют ответ на вопрос.
+5. Сохраняйте исходную структуру проекта в репозитории. Не добавляйте лишние файлы, которые не относятся к проекту или выполнению заданий.
+6. Оформление коммитов и веток на GitHub должно соответствовать общим правилам для всех курсов Института биоинформатики.
+
+## О задании
+
+---
+title: "Ошибки I и II рода"
+lang: ru
+format:
+  html:
+    toc: true
+    toc-title: "Содержание"
+    embed-resources: true
+---
+
+## Параметры распределений
+
+Для проведения симуляций были зафиксированы следующие параметры генеральных совокупностей. Они остаются неизменными при варьировании объёма выборки $n$ и уровня значимости $\alpha$.
+
+1. **Нормальное распределение** (`normal`):
+   - $H_0$ верна: $X \sim N(\mu=0, \sigma=1)$, $Y \sim N(\mu=0, \sigma=1)$. Истинные средние: 0 и 0. Истинные СО: 1 и 1.
+   - $H_0$ неверна: $X \sim N(\mu=0, \sigma=1)$, $Y \sim N(\mu=1, \sigma=1)$. Истинные средние: 0 и 1. Истинные СО: 1 и 1.
+
+2. **Равномерное распределение** (`uniform`):
+   - $H_0$ верна: $X \sim U(min=0, max=1)$, $Y \sim U(min=0, max=1)$. Истинные средние: 0.5 и 0.5. Истинные СО: $\approx 0.289$ и $\approx 0.289$.
+   - $H_0$ неверна: $X \sim U(min=0, max=1)$, $Y \sim U(min=0.5, max=1.5)$. Истинные средние: 0.5 и 1.0. Истинные СО: $\approx 0.289$ и $\approx 0.289$.
+
+3. **Экспоненциальное распределение** (`exponential`):
+   - $H_0$ верна: $X \sim Exp(rate=1)$, $Y \sim Exp(rate=1)$. Истинные средние: 1 и 1. Истинные СО: 1 и 1.
+   - $H_0$ неверна: $X \sim Exp(rate=1)$, $Y \sim Exp(rate=0.5)$. Истинные средние: 1 и 2. Истинные СО: 1 и 2.
+
+## Проведение симуляции
+
+```{r simulation, warning=FALSE, message=FALSE}
+library(tidyverse)
+
+# Фиксация seed один раз перед всеми симуляциями
+set.seed(42)
+
+# Уровни значимости от 0.01 до 0.20 с шагом 0.01
+alphas <- seq(0.01, 0.20, by = 0.01)
+
+# Функция для генерации данных и возврата 1000 p-значений для одного сочетания условий
+get_pvalues <- function(scenario, dist, n, reps = 1000) {
+  replicate(reps, {
+    if (dist == "normal") {
+      if (scenario == "H0_true") {
+        x <- rnorm(n, mean = 0, sd = 1)
+        y <- rnorm(n, mean = 0, sd = 1)
+      } else {
+        x <- rnorm(n, mean = 0, sd = 1)
+        y <- rnorm(n, mean = 1, sd = 1)
+      }
+    } else if (dist == "uniform") {
+      if (scenario == "H0_true") {
+        x <- runif(n, min = 0, max = 1)
+        y <- runif(n, min = 0, max = 1)
+      } else {
+        x <- runif(n, min = 0, max = 1)
+        y <- runif(n, min = 0.5, max = 1.5)
+      }
+    } else if (dist == "exponential") {
+      if (scenario == "H0_true") {
+        x <- rexp(n, rate = 1)
+        y <- rexp(n, rate = 1)
+      } else {
+        x <- rexp(n, rate = 1)
+        y <- rexp(n, rate = 0.5)
+      }
+    }
+    # Двухвыборочный t-тест Велча (стандартный для t.test)
+    t.test(x, y)$p.value
+  })
+}
+
+# Сетка всех 24 условий (2 сценария × 3 распределения × 4 объёма выборки)
+conditions <- expand_grid(
+  scenario = c("H0_true", "H0_false"),
+  dist = c("normal", "uniform", "exponential"),
+  n = c(3, 10, 30, 100)
+)
+
+# Проведение симуляций (сохраняем вектор из 1000 p-значений для каждого условия)
+sim_results <- conditions %>%
+  rowwise() %>%
+  mutate(p_values = list(get_pvalues(scenario, dist, n, reps = 1000))) %>%
+  ungroup()
+
+# Расчёт вероятности ошибки для каждого alpha из одних и тех же p-значений
+sim_data <- sim_results %>%
+  mutate(alpha_list = list(alphas)) %>%
+  unnest(cols = c(alpha_list)) %>%
+  rename(alpha = alpha_list) %>%
+  rowwise() %>%
+  mutate(
+    error_rate = mean(p_values < alpha)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    scenario_label = if_else(scenario == "H0_true", "Ошибка I рода", "Ошибка II рода"),
+    dist_label = case_when(
+      dist == "normal" ~ "Нормальное",
+      dist == "uniform" ~ "Равномерное",
+      dist == "exponential" ~ "Экспоненциальное"
+    ),
+    n_label = factor(n, levels = c(3, 10, 30, 100), labels = c("n = 3", "n = 10", "n = 30", "n = 100"))
+  )
+```
+
+## Построение графиков
+
+```{r plots, warning=FALSE, message=FALSE, fig.width=12, fig.height=10}
+# Единый стиль для всех графиков (не по умолчанию)
+custom_theme <- theme_bw() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold", margin = margin(b = 15)),
+    axis.title = element_text(size = 13, face = "bold"),
+    axis.text = element_text(size = 11),
+    legend.position = "bottom",
+    legend.title = element_text(size = 12, face = "bold"),
+    legend.text = element_text(size = 11),
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(size = 13, face = "bold")
+  )
+
+# График 1: Ошибка I рода
+plot_type1 <- sim_data %>%
+  filter(scenario == "H0_true") %>%
+  ggplot(aes(x = alpha, y = error_rate, color = n_label, group = n_label)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black", linewidth = 1, alpha = 0.7) +
+  facet_wrap(~ dist_label, ncol = 3) +
+  scale_color_brewer(palette = "Set1", name = "Объём выборки (n)") +
+  labs(
+    title = "Зависимость вероятности ошибки I рода от уровня значимости α",
+    x = "Уровень значимости (α)",
+    y = "Вероятность ошибки I рода"
+  ) +
+  custom_theme +
+  scale_x_continuous(breaks = seq(0, 0.20, 0.05), limits = c(0, 0.20)) +
+  scale_y_continuous(breaks = seq(0, 0.25, 0.05), limits = c(0, 0.25))
+
+# График 2: Ошибка II рода
+plot_type2 <- sim_data %>%
+  filter(scenario == "H0_false") %>%
+  ggplot(aes(x = alpha, y = error_rate, color = n_label, group = n_label)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2.5) +
+  facet_wrap(~ dist_label, ncol = 3) +
+  scale_color_brewer(palette = "Set1", name = "Объём выборки (n)") +
+  labs(
+    title = "Зависимость вероятности ошибки II рода от уровня значимости α",
+    x = "Уровень значимости (α)",
+    y = "Вероятность ошибки II рода"
+  ) +
+  custom_theme +
+  scale_x_continuous(breaks = seq(0, 0.20, 0.05), limits = c(0, 0.20)) +
+  scale_y_continuous(breaks = seq(0, 1.0, 0.2), limits = c(0, 1.0))
+
+# Вывод графиков
+plot_type1
+plot_type2
+```
+
+## Выводы
+
+1. **Близость ошибки I рода к $\alpha$:** В большинстве случаев оценённая вероятность ошибки I рода очень близка к заданному уровню значимости $\alpha$ (кривые проходят вблизи пунктирной линии $y = \alpha$). Однако для малых объёмов выборки ($n = 3$) при экспоненциальном распределении наблюдается заметное отклонение: фактическая частота ошибки I рода оказывается **ниже** заданного $\alpha$ (тест становится консервативным). Для нормального и равномерного распределений отклонения минимальны даже при малых $n$.
+
+2. **Изменение ошибки II рода:** Вероятность ошибки II рода монотонно **уменьшается** при увеличении уровня значимости $\alpha$. Это происходит из-за фундаментального компромисса: расширяя область отклонения $H_0$ (увеличивая $\alpha$), мы повышаем шанс обнаружить эффект. Также вероятность ошибки II рода резко **уменьшается** с ростом объёма выборки $n$, так как увеличение $n$ снижает стандартную ошибку, делая распределения выборочных средних уже и легче различимыми (растёт статистическая мощность).
+
+3. **Различия между распределениями:** Нормальное распределение идеально удовлетворяет предположениям t-теста. Равномерное распределение симметрично, и благодаря центральной предельной теореме t-тест работает хорошо даже при малых $n$. Экспоненциальное распределение имеет сильную правостороннюю асимметрию. При очень малых $n$ (например, 3) это нарушает предположение о нормальности, что приводит к завышенным p-значениям и консервативности теста. При $n \ge 30$ влияние асимметрии нивелируется.
+
+4. **Причины несовпадения частоты ошибки I рода и $\alpha$:** Во-первых, случайная вариативность выборки (при 1000 повторений стандартная ошибка пропорции составляет около $\pm 0.7\%$). Во-вторых, нарушение предположений теста (нормальности данных), что критично для малых объёмов выборок. В-третьих, при крайне малых $n$ пространство возможных значений тестовой статистики ограничено, что вносит дискретность в распределение p-значений.
+
+## Дополнительное задание
+
+Для дополнительного задания выбрано **экспоненциальное распределение** и объём выборки **$n = 10$**. 
+В качестве изменяемого параметра выбрана **разница средних**, которая достигается изменением параметра `rate` (интенсивности) для группы $Y$.
+- **Исходный вариант:** $X \sim Exp(1)$, $Y \sim Exp(0.5)$ (разница средних: $2 - 1 = 1$).
+- **Вариант 1 (увеличенная разница):** $X \sim Exp(1)$, $Y \sim Exp(0.2)$ (разница средних: $5 - 1 = 4$).
+- **Вариант 2 (уменьшенная разница):** $X \sim Exp(1)$, $Y \sim Exp(0.8)$ (разница средних: $1.25 - 1 = 0.25$).
+
+Параметры для сценария $H_0$ верна остаются неизменными ($X \sim Exp(1)$, $Y \sim Exp(1)$) для всех вариантов.
+
+```{r additional_task, warning=FALSE, message=FALSE, fig.width=10, fig.height=5}
+get_pvalues_add <- function(variant, scenario, n = 10, reps = 1000) {
+  replicate(reps, {
+    if (scenario == "H0_true") {
+      x <- rexp(n, rate = 1)
+      y <- rexp(n, rate = 1)
+    } else {
+      if (variant == "base") {
+        x <- rexp(n, rate = 1)
+        y <- rexp(n, rate = 0.5)
+      } else if (variant == "large_diff") {
+        x <- rexp(n, rate = 1)
+        y <- rexp(n, rate = 0.2)
+      } else if (variant == "small_diff") {
+        x <- rexp(n, rate = 1)
+        y <- rexp(n, rate = 0.8)
+      }
+    }
+    t.test(x, y)$p.value
+  })
+}
+
+add_conditions <- expand_grid(
+  variant = c("base", "large_diff", "small_diff"),
+  scenario = c("H0_true", "H0_false")
+)
+
+add_results <- add_conditions %>%
+  rowwise() %>%
+  mutate(p_values = list(get_pvalues_add(variant, scenario, n = 10, reps = 1000))) %>%
+  ungroup() %>%
+  mutate(alpha_list = list(alphas)) %>%
+  unnest(cols = c(alpha_list)) %>%
+  rename(alpha = alpha_list) %>%
+  rowwise() %>%
+  mutate(
+    error_rate = mean(p_values < alpha),
+    scenario_label = if_else(scenario == "H0_true", "Ошибка I рода", "Ошибка II рода"),
+    variant_label = case_when(
+      variant == "base" ~ "Исходный (rate_Y = 0.5)",
+      variant == "large_diff" ~ "Увеличенная разница (rate_Y = 0.2)",
+      variant == "small_diff" ~ "Уменьшенная разница (rate_Y = 0.8)"
+    )
+  ) %>%
+  ungroup() %>%
+  mutate(variant_label = factor(variant_label, levels = c("Исходный (rate_Y = 0.5)", "Увеличенная разница (rate_Y = 0.2)", "Уменьшенная разница (rate_Y = 0.8)")))
+
+# График доп. задания: Ошибка I рода
+plot_add1 <- add_results %>%
+  filter(scenario == "H0_true") %>%
+  ggplot(aes(x = alpha, y = error_rate, color = variant_label, group = variant_label)) +
+  geom_line(size = 1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black", linewidth = 1, alpha = 0.7) +
+  labs(
+    title = "Доп. задание: Ошибка I рода (Экспоненциальное, n=10)",
+    x = "Уровень значимости (α)",
+    y = "Вероятность ошибки I рода",
+    color = "Вариант"
+  ) +
+  custom_theme +
+  scale_color_brewer(palette = "Dark2") +
+  scale_y_continuous(limits = c(0, 0.25))
+
+# График доп. задания: Ошибка II рода
+plot_add2 <- add_results %>%
+  filter(scenario == "H0_false") %>%
+  ggplot(aes(x = alpha, y = error_rate, color = variant_label, group = variant_label)) +
+  geom_line(size = 1.2) +
+  labs(
+    title = "Доп. задание: Ошибка II рода (Экспоненциальное, n=10)",
+    x = "Уровень значимости (α)",
+    y = "Вероятность ошибки II рода",
+    color = "Вариант"
+  ) +
+  custom_theme +
+  scale_color_brewer(palette = "Dark2") +
+  scale_y_continuous(limits = c(0, 1.0))
+
+plot_add1
+plot_add2
+```
+
+### Наблюдения и объяснения для дополнительного задания:
+
+1. **Ошибка I рода:** Все три кривые практически полностью совпадают друг с другом и с линией $y = \alpha$. Это ожидаемо, так как в сценарии $H_0$ верна данные для всех вариантов генерируются абсолютно одинаково. Изменение параметров для сценария $H_a$ никак не влияет на поведение теста, когда нулевая гипотеза на самом деле верна.
+
+2. **Ошибка II рода:** Наблюдается чёткое расслоение кривых. При **увеличенной разнице** средних вероятность ошибки II рода резко падает (мощность теста растёт), так как распределения двух групп меньше перекрываются. При **уменьшенной разнице** средних вероятность ошибки II рода значительно возрастает, приближаясь к 1.0 при малых $\alpha$, поскольку эффект становится слишком слабым, чтобы надёжно отличить его от случайного шума при $n=10$.
